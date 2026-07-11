@@ -1,0 +1,16 @@
+account_id,account_name,mrr,plan_name,subscription_status,failed_payment_count_last_30d,days_since_last_login,open_support_tickets,contract_end_date
+ACC-1001,Acme Corporation,5200,Enterprise,Active,0,3,0,2027-04-30
+ACC-1002,BluePeak Analytics,1850,Professional,Active,2,42,3,2026-08-15
+ACC-1003,Northwind Logistics,7600,Enterprise,Active,0,5,1,2027-01-20
+ACC-1004,Sunrise Health,950,Starter,Past Due,3,67,4,2026-07-31
+ACC-1005,Vertex Solutions,3200,Business,Active,1,14,0,2026-12-10
+ACC-1006,GreenLeaf Retail,780,Basic,Canceled,0,95,0,2026-06-30
+ACC-1007,Orion Manufacturing,6400,Enterprise,Active,0,8,5,2026-09-05
+ACC-1008,Horizon Media,2400,Professional,Past Due,2,58,2,2026-08-01
+ACC-1009,CloudNova,4100,Business,Active,0,11,0,2027-03-15
+ACC-1010,Atlas Consulting,1350,Starter,Active,1,39,1,2026-07-25
+ACC-1011,Pinnacle Finance,8900,Enterprise,Active,0,2,0,2027-05-18
+ACC-1012,EcoSmart Energy,2750,Professional,Active,4,83,6,2026-07-20
+ACC-1013,Silverline Education,1600,Starter,Trialing,0,27,0,2026-10-15
+ACC-1014,Urban Mobility,5100,Business,Past Due,1,46,3,2026-08-10
+ACC-1015,Quantum Dynamics,7200,Enterprise,Active,0,4,0,2027-02-28

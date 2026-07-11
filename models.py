@@ -58,7 +58,22 @@ class Account(BaseModel):
         if not value or not value.strip():
             raise ValueError("field must not be blank")
         return value.strip()
+    
+    @field_validator("subscription_status", mode="before")
+    @classmethod
+    def normalize_subscription_status(cls, value):
+        """
+        Normalizes common formatting variance before enum matching.
 
+        Real-world CSVs exported from a CRM rarely use the exact
+        snake_case values our Enum defines internally (e.g. "Past Due"
+        instead of "past_due"). This normalizes casing and
+        whitespace/hyphens to underscores so those known variations are
+        accepted, while genuinely unknown values still fail loudly.
+        """
+        if isinstance(value, str):
+            return value.strip().lower().replace(" ", "_").replace("-", "_")
+        return value
 
 class RiskLevel(str, Enum):
     """
