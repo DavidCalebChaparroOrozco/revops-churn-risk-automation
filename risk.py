@@ -96,10 +96,10 @@ def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal
     return signals
 
 
-def _level_from_score(score: int) -> RiskLevel:
-    if score >= HIGH_THRESHOLD:
+def _level_from_score(score: int, medium_threshold: int, high_threshold: int) -> RiskLevel:
+    if score >= high_threshold:
         return RiskLevel.HIGH
-    if score >= MEDIUM_THRESHOLD:
+    if score >= medium_threshold:
         return RiskLevel.MEDIUM
     return RiskLevel.NONE
 
@@ -107,11 +107,13 @@ def _level_from_score(score: int) -> RiskLevel:
 def evaluate_account_risk(
     account: Account,
     reference_date: date | None = None,
+    medium_threshold: int = MEDIUM_THRESHOLD,
+    high_threshold: int = HIGH_THRESHOLD,
 ) -> RiskAssessment:
     reference_date = reference_date or date.today()
     signals = _evaluate_signals(account, reference_date)
     score = sum(signal.points for signal in signals)
-    level = _level_from_score(score)
+    level = _level_from_score(score, medium_threshold, high_threshold)
 
     return RiskAssessment(
         account=account,
@@ -124,7 +126,12 @@ def evaluate_account_risk(
 def evaluate_accounts(
     accounts: list[Account],
     reference_date: date | None = None,
+    medium_threshold: int = MEDIUM_THRESHOLD,
+    high_threshold: int = HIGH_THRESHOLD,
 ) -> list[RiskAssessment]:
-    assessments = [evaluate_account_risk(a, reference_date) for a in accounts]
+    assessments = [
+        evaluate_account_risk(a, reference_date, medium_threshold, high_threshold)
+        for a in accounts
+    ]
     at_risk = [a for a in assessments if a.is_at_risk]
     return sorted(at_risk, key=lambda a: a.score, reverse=True)
