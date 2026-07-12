@@ -83,6 +83,85 @@ minor variance here in exchange for not building a fragile validator;
 the practical risk (a 4-sentence summary slipping through) is low-cost
 if it happens.
 
+## Iteration: what was tried first, what would have broken, what changed
+
+**A note on how this section is written:** rather than fabricate a
+transcript of a "first bad attempt" that wasn't actually run against
+a live model, this section documents the reasoning applied *before*
+writing the final prompt -- reasoning grounded in well-known,
+widely-documented LLM behavior patterns, not guesswork. The honest
+version of "what changed" here is "what I designed around from the
+start, and why," which is arguably more useful than a contrived failed
+first draft. Where a genuine live A/B between prompt versions would add
+real evidence, that's called out below and left as a production
+next step rather than simulated.
+
+**The naive version we deliberately did not write:** pass the raw CSV
+row straight into the prompt and ask the model to "summarize this
+account's churn risk in 2-3 sentences." Two well-documented failure
+patterns predictably show up with this approach, which is exactly why
+the final design (`_build_user_prompt` in `llm.py`) never took it:
+
+1. **Field regurgitation.** Models given raw structured data as context
+   tend to echo field names and values close to verbatim
+   ("failed_payment_count_last_30d is 3, days_since_last_login is 67")
+   rather than translating them into analyst prose, especially at
+   lower temperatures or with shorter instructions. This is *why* the
+   system prompt has an explicit instruction against it, and *why* the
+   model is handed pre-translated `RiskSignal.detail` strings ("3 failed
+   payments in the last 30 days") instead of raw field/value pairs --
+   removing the raw field names from the model's context entirely is a
+   stronger guarantee than merely instructing it not to use them.
+2. **Confidence untethered from evidence strength.** A model asked to
+   write a "risk summary" for any account handed to it tends to write
+   with uniform confidence regardless of how much or how little
+   evidence supports the risk call -- it has no way to know, on its
+   own, that a 3-point score (barely crossing the `MEDIUM` threshold)
+   deserves more hedging than a 14-point score. This is why the prompt
+   includes an explicit instruction to flag limited evidence, and it's
+   also why this limitation is called out below as one the instruction
+   only partially solves.
+
+**What a real next iteration would add:** an actual A/B, not a
+predicted one -- run both the naive raw-field version and the current
+signal-based version against the same 15-account sample through the
+same provider, and compare outputs side by side. This is listed
+explicitly in the production improvements below rather than skipped
+silently, since "we predicted the failure mode but didn't empirically
+confirm it" is a real limitation of this write-up, not something to
+gloss over.
+
+## The one thing this prompt will get wrong even when it works
+
+Asked to name a single specific failure mode (not a list): **the model
+cannot distinguish a borderline flag from an overwhelming one**,
+because it never sees the numeric thresholds that produced the
+signals it's handed -- only the signal list itself.
+
+Concretely: an account that scores exactly 3 (e.g. one moderate
+inactivity signal plus one weak failed-payment signal) and an account
+that scores 14 (five signals firing, including a past-due subscription)
+both get summarized with the same prompt and the same instruction set.
+The "flag limited evidence" instruction helps when the signal *list* is
+short, but a short list and a low score aren't the same thing every
+time, and the model has no access to `RiskAssessment.score` or the
+`MEDIUM_THRESHOLD`/`HIGH_THRESHOLD` constants from `risk.py` -- only to
+the `signals` array already filtered into prose-ready strings. Two
+accounts with different underlying confidence can end up reading with
+similarly assertive tone in the final Slack message.
+
+**What I'd do about it in production:** pass the numeric score and the
+threshold values into the prompt explicitly (not just the signal
+list), and add an instruction that ties hedging language directly to
+score proximity to the threshold ("if the score is within 1-2 points
+of the minimum flagging threshold, describe the risk as emerging or
+worth monitoring rather than urgent"). This was left out of the
+current version specifically because it re-introduces raw numbers into
+the prompt, which was the thing deliberately avoided (see "What's in
+context" below) to keep the model from reasoning about thresholds
+itself -- so this fix has its own trade-off worth testing, not a free
+improvement.
+
 ## What's in context vs. what's left out
 
 **In context:**
