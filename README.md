@@ -22,6 +22,10 @@ and posting a formatted report to Slack.
   - [LLM integration \& multi-provider failover](#llm-integration--multi-provider-failover)
   - [Error handling \& resilience](#error-handling--resilience)
   - [Project structure](#project-structure)
+  - [Stretch goals](#stretch-goals)
+    - [✅ Stretch B — Observability (implemented)](#-stretch-b--observability-implemented)
+    - [✅ Stretch C — Security (implemented)](#-stretch-c--security-implemented)
+    - [❌ Stretch A — Webhook trigger (not implemented, by choice)](#-stretch-a--webhook-trigger-not-implemented-by-choice)
   - [Known limitations \& production improvements](#known-limitations--production-improvements)
 
 ---
@@ -93,7 +97,29 @@ INFO Run summary: {'accounts_loaded': 15, 'row_errors': 0, 'accounts_at_risk': 7
 
 ## Architecture
 
-![alt text](Architecture.png)
+```
+CSV file
+   │
+   ▼
+app.py::load_accounts_from_csv()  ──► models.py::Account (Pydantic validation)
+   │  (invalid rows are skipped, logged, and don't stop the batch)
+   ▼
+risk.py::evaluate_accounts()  ──► models.py::RiskAssessment
+   │  (deterministic scoring rules, no LLM involved)
+   ▼
+app.py::build_reports()
+   │
+   ├─► llm.py::generate_risk_summary()
+   │      tries llm_providers.py providers in order (e.g. OpenAI → Gemini)
+   │      │
+   │      └─ all providers fail ─► llm.py::build_fallback_summary()
+   │                                 (deterministic, rule-based text)
+   ▼
+models.py::AccountRiskReport  (summary + which provider produced it)
+   │
+   ▼
+slack_client.py::build_slack_message() ──► slack_client.py::send_to_slack()
+```
 
 **Design principle behind this split:** each module has exactly one
 reason to change.
@@ -193,17 +219,107 @@ formatting variance without weakening validation.
 ```
 revops-churn-risk-automation/
 ├── app.py              # Orchestrator: CLI entrypoint + testable run_pipeline()
-├── models.py           # Pydantic models: single source of truth for data shapes
-├── risk.py             # Pure business rules: churn risk scoring (no I/O, no LLM)
-├── llm.py              # Prompt design + provider failover + fallback summaries
-├── llm_providers.py    # OpenAI / Gemini provider implementations (shared contract)
-├── slack_client.py     # Slack Block Kit formatting + webhook delivery
-├── sample_accounts.csv # Sample dataset used for testing throughout development
-├── prompt_design.md    # Full prompt engineering rationale, failure modes, improvements
+├── models.py            # Pydantic models: single source of truth for data shapes
+├── risk.py               # Pure business rules: churn risk scoring (no I/O, no LLM)
+├── llm.py                 # Prompt design + provider failover + fallback summaries
+├── llm_providers.py        # OpenAI / Gemini provider implementations (shared contract)
+├── slack_client.py          # Slack Block Kit formatting + webhook delivery
+├── observability.py          # Structured JSON audit log per account (Stretch B)
+├── sample_accounts.csv       # Sample dataset used for testing throughout development
+├── prompt_design.md           # Full prompt engineering rationale, failure modes, improvements
 ├── requirements.txt
 ├── .env.example
 └── README.md
 ```
+
+## Stretch goals
+
+The assessment is explicit that stretch work should not come at the
+cost of core quality, and that a well-reasoned scope decision is worth
+more than doing everything. Here's what was done, what wasn't, and why.
+
+### ✅ Stretch B — Observability (implemented)
+
+`observability.py::log_account_decision()` emits one structured JSON
+record per account, on every run, to a dedicated `audit` logger kept
+separate from the human-readable console logs:
+
+```json
+{
+  "timestamp": "2026-07-12T02:51:17.690520+00:00",
+  "account_id": "ACC-1004",
+  "account_name": "Sunrise Health",
+  "risk_score": 14,
+  "risk_level": "high",
+  "signals": [
+    {"name": "failed_payments", "points": 3},
+    {"name": "inactivity", "points": 3},
+    {"name": "support_load", "points": 2},
+    {"name": "subscription_status", "points": 4},
+    {"name": "contract_ending_soon", "points": 2}
+  ],
+  "summary_source": "gemini",
+  "summary_generation_failed": false,
+  "summary_length_chars": 148
+}
+```
+
+**Why this matters specifically for an LLM-based pipeline:** unlike a
+purely deterministic system, the LLM step is non-deterministic and not
+perfectly reproducible — re-running the same CSV can produce a
+differently-worded summary, or route through a different provider if
+one is degraded. Without a structured record captured at decision
+time, "why was this account flagged, and why did the summary say what
+it said, and which provider produced it" becomes unanswerable after
+the fact except by re-running the pipeline and hoping for a similar
+result. This record separates the **deterministic** part (score,
+signals, level — fully reproducible from `risk.py`) from the
+**non-deterministic** part (which provider, whether it succeeded,
+output length), so a person debugging a bad summary weeks later has
+a ground-truth trail instead of a guess. It's also the natural
+foundation for two things a production version would need: alerting
+when `summary_source` starts trending toward `"fallback"` (a provider
+degrading), and building an evaluation dataset from real traffic.
+
+### ✅ Stretch C — Security (implemented)
+
+- **Secrets never touch the codebase.** All credentials come from
+  `.env` (gitignored) via `python-dotenv`; `.env.example` ships with
+  placeholder values only.
+- **The Slack webhook URL is never logged**, including on delivery
+  failure — only the HTTP status code and Slack's response body are
+  logged, which are non-secret and useful for debugging.
+- **All external input (the CSV) is validated, not trusted.**
+  `models.py::Account` uses Pydantic to reject malformed rows rather
+  than silently coercing them (see [Error handling](#error-handling--resilience)).
+- **Log injection hardening.** `account_name` comes from an external
+  CSV we don't control the origin of. `models.py` strips non-printable
+  characters (newlines, carriage returns) from it, so a maliciously
+  crafted account name can't forge fake log lines when interpolated
+  into a log message.
+- **Prompt injection surface is documented, not hidden.** `account_name`
+  is still interpolated directly into the LLM prompt. This is called
+  out explicitly as a known risk in `prompt_design.md` rather than
+  quietly assumed safe — for an internal RevOps CSV the risk is low,
+  but it's the kind of thing that should be re-evaluated the moment
+  the CSV's source becomes less trusted.
+
+### ❌ Stretch A — Webhook trigger (not implemented, by choice)
+
+Wrapping `run_pipeline()` in an HTTP endpoint (e.g. FastAPI) would be a
+mostly mechanical change — the pipeline function already takes all its
+dependencies as parameters and returns a plain dict, specifically so it
+*could* be called from something other than a CLI without modification.
+Given the explicit instruction to prioritize core quality over stretch
+breadth, the time was spent instead on something the core task didn't
+ask for but real end-to-end testing surfaced as a genuine production
+concern: **automatic failover between two LLM providers** (see
+[LLM integration](#llm-integration--multi-provider-failover)), after a
+real OpenAI quota error during testing showed that a single-provider
+design would mean the whole weekly report degrades to 100% rule-based
+summaries the moment one vendor has an outage or billing issue. That
+felt like the higher-value use of remaining time than an HTTP wrapper
+with no new design decisions behind it.
 
 ## Known limitations & production improvements
 
