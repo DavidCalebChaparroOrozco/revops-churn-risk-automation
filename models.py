@@ -54,10 +54,21 @@ class Account(BaseModel):
     @field_validator("account_id", "account_name", "plan_name")
     @classmethod
     def not_blank(cls, value: str) -> str:
-        """Prevents a critical text field from arriving blank due to a malformed row."""
+        """
+        Prevents a critical text field from arriving blank due to a
+        malformed row, and strips control characters (newlines, carriage
+        returns, tabs) that could otherwise be used for log injection --
+        e.g. an account_name containing a fake newline-delimited log
+        line, forging a bogus log entry when this value is later
+        interpolated into a log message (see observability.py,
+        app.py's logger.warning calls) or into the LLM prompt itself.
+        This is a real concern specifically because this field comes
+        from an external CSV we don't control the origin of.
+        """
         if not value or not value.strip():
             raise ValueError("field must not be blank")
-        return value.strip()
+        cleaned = "".join(ch for ch in value if ch.isprintable() or ch == " ")
+        return cleaned.strip()
 
     @field_validator("subscription_status", mode="before")
     @classmethod
