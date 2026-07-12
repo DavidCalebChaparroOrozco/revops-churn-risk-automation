@@ -34,6 +34,7 @@ from dotenv import load_dotenv
 from llm import LLMGenerationError, build_fallback_summary, generate_risk_summary
 from llm_providers import GeminiProvider, LLMProvider, OpenAIProvider
 from models import Account, AccountRiskReport
+from observability import log_account_decision
 from risk import MEDIUM_THRESHOLD, evaluate_accounts
 from slack_client import SlackDeliveryError, build_slack_message, send_to_slack
 
@@ -230,6 +231,20 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # Structured audit trail: a separate logger with its own handler
+    # and a bare formatter, so each line is a clean JSON object with no
+    # human-readable prefix -- see observability.py for the rationale.
+    # In production this handler would point at a file or log
+    # aggregator instead of stdout; kept as stdout here to keep the
+    # prototype runnable with zero extra configuration.
+    audit_handler = logging.StreamHandler()
+    audit_handler.setFormatter(logging.Formatter("%(message)s"))
+    audit_logger = logging.getLogger("audit")
+    audit_logger.addHandler(audit_handler)
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.propagate = False
+    
     load_dotenv()
 
     args = _build_arg_parser().parse_args()
