@@ -58,7 +58,7 @@ class Account(BaseModel):
         if not value or not value.strip():
             raise ValueError("field must not be blank")
         return value.strip()
-    
+
     @field_validator("subscription_status", mode="before")
     @classmethod
     def normalize_subscription_status(cls, value):
@@ -66,14 +66,18 @@ class Account(BaseModel):
         Normalizes common formatting variance before enum matching.
 
         Real-world CSVs exported from a CRM rarely use the exact
-        snake_case values our Enum defines internally (e.g. "Past Due"
-        instead of "past_due"). This normalizes casing and
-        whitespace/hyphens to underscores so those known variations are
-        accepted, while genuinely unknown values still fail loudly.
+        snake_case values our Enum defines internally (e.g. a CRM might
+        export "Past Due" or "PAST_DUE" instead of "past_due"). This
+        normalizes casing and whitespace/hyphens to underscores so those
+        known variations are accepted, while genuinely unknown values
+        (e.g. a typo, or a new status our Enum doesn't model yet) still
+        fail loudly with a clear Pydantic error -- we normalize *format*,
+        we don't silently accept *unknown business values*.
         """
         if isinstance(value, str):
             return value.strip().lower().replace(" ", "_").replace("-", "_")
         return value
+
 
 class RiskLevel(str, Enum):
     """
@@ -132,4 +136,5 @@ class AccountRiskReport(BaseModel):
 
     assessment: RiskAssessment
     summary: str
+    summary_source: str = "fallback"  # "openai" | "gemini" | "fallback" -- see llm_providers.py
     summary_generation_failed: bool = False
