@@ -20,14 +20,30 @@ from datetime import date
 
 from models import Account, RiskAssessment, RiskLevel, RiskSignal, SubscriptionStatus
 
+# Score thresholds. Kept as module-level constants (not magic numbers
+# scattered in the function body) so they can be explained and tuned
+# in one place. RISK_SCORE_THRESHOLD in .env maps to MEDIUM_THRESHOLD;
+# HIGH_THRESHOLD is currently fixed because it reflects a business
+# judgment call, not an operational knob RevOps needs to change often.
 MEDIUM_THRESHOLD = 3
 HIGH_THRESHOLD = 5
+
+# Days-until-contract-end window that counts as "renewal approaching".
 CONTRACT_RENEWAL_WINDOW_DAYS = 30
 
 
 def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal]:
+    """
+    Evaluate every risk rule against a single account.
+
+    Returns only the signals that actually fired -- an empty list means
+    a healthy account. Each rule is independent and self-contained on
+    purpose: adding a new signal means adding one more `if` block here,
+    without touching anything else in the module.
+    """
     signals: list[RiskSignal] = []
 
+    # --- Failed payments ---
     if account.failed_payment_count_last_30d >= 2:
         signals.append(
             RiskSignal(
@@ -45,6 +61,7 @@ def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal
             )
         )
 
+    # --- Login inactivity ---
     if account.days_since_last_login > 30:
         signals.append(
             RiskSignal(
@@ -62,6 +79,7 @@ def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal
             )
         )
 
+    # --- Open support tickets ---
     if account.open_support_tickets >= 3:
         signals.append(
             RiskSignal(
@@ -71,6 +89,7 @@ def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal
             )
         )
 
+    # --- Subscription status ---
     if account.subscription_status in (
         SubscriptionStatus.PAST_DUE,
         SubscriptionStatus.CANCELED,
@@ -83,6 +102,7 @@ def _evaluate_signals(account: Account, reference_date: date) -> list[RiskSignal
             )
         )
 
+    # --- Contract renewal window ---
     days_until_contract_end = (account.contract_end_date - reference_date).days
     if 0 <= days_until_contract_end <= CONTRACT_RENEWAL_WINDOW_DAYS:
         signals.append(
@@ -110,6 +130,18 @@ def evaluate_account_risk(
     medium_threshold: int = MEDIUM_THRESHOLD,
     high_threshold: int = HIGH_THRESHOLD,
 ) -> RiskAssessment:
+    """
+    Evaluate a single account and return its full RiskAssessment.
+
+    `reference_date` defaults to today but can be injected explicitly.
+    This is what makes the "contract ending soon" rule testable without
+    depending on the wall clock -- a test can freeze reference_date to
+    a fixed value and get a deterministic result.
+
+    `medium_threshold` defaults to the module constant but can be
+    overridden -- this is what lets app.py wire up RISK_SCORE_THRESHOLD
+    from the environment without editing this file.
+    """
     reference_date = reference_date or date.today()
     signals = _evaluate_signals(account, reference_date)
     score = sum(signal.points for signal in signals)
@@ -129,6 +161,14 @@ def evaluate_accounts(
     medium_threshold: int = MEDIUM_THRESHOLD,
     high_threshold: int = HIGH_THRESHOLD,
 ) -> list[RiskAssessment]:
+    """
+    Evaluate a batch of accounts and return only those at risk,
+    sorted by score descending (highest risk first).
+
+    Filtering + sorting happens here, not in app.py, because "what
+    counts as at risk" and "what order to report it in" are business
+    decisions that belong with the rest of the risk rules.
+    """
     assessments = [
         evaluate_account_risk(a, reference_date, medium_threshold, high_threshold)
         for a in accounts
