@@ -56,7 +56,12 @@ def load_accounts_from_csv(csv_path: str) -> tuple[list[Account], list[tuple[str
     to LLM and Slack calls, applied to the very first step of the
     pipeline.
     """
-    df = pd.read_csv(csv_path)
+    try:
+        df = pd.read_csv(csv_path)
+    except FileNotFoundError as exc:
+        raise ConfigError(f"CSV file not found at '{csv_path}'") from exc
+    except pd.errors.EmptyDataError as exc:
+        raise ConfigError(f"CSV file at '{csv_path}' is empty or malformed") from exc
 
     accounts: list[Account] = []
     errors: list[tuple[str, str]] = []
@@ -214,7 +219,7 @@ def _build_providers() -> list[LLMProvider]:
     if gemini_api_key:
         from google import genai
 
-        gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
+        gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         providers.append(GeminiProvider(genai.Client(api_key=gemini_api_key), gemini_model))
 
     return providers
