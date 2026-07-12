@@ -33,7 +33,7 @@ and posting a formatted report to Slack.
 ## Quickstart
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/DavidCalebChaparroOrozco/revops-churn-risk-automation.git
 cd revops-churn-risk-automation
 
 python3.12 -m venv venv
