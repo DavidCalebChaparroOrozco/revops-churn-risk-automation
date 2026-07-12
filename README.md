@@ -21,7 +21,7 @@ and posting a formatted report to Slack.
   - [Churn risk logic](#churn-risk-logic)
   - [LLM integration \& multi-provider failover](#llm-integration--multi-provider-failover)
   - [Error handling \& resilience](#error-handling--resilience)
-  - [Project structure](#project-structure)
+  - [Project Structure](#project-structure)
   - [Stretch goals](#stretch-goals)
     - [✅ Stretch B — Observability (implemented)](#-stretch-b--observability-implemented)
     - [✅ Stretch C — Security (implemented)](#-stretch-c--security-implemented)
@@ -97,7 +97,7 @@ INFO Run summary: {'accounts_loaded': 15, 'row_errors': 0, 'accounts_at_risk': 7
 
 ## Architecture
 
-![alt text](Architecture.png)
+![alt text](assets/architecture.png)
 
 **Design principle behind this split:** each module has exactly one
 reason to change.
@@ -192,22 +192,25 @@ normalizes casing/spacing *before* validating against the enum, while
 still rejecting genuinely unknown status values — tolerating known
 formatting variance without weakening validation.
 
-## Project structure
+## Project Structure
 
-```
+```text
 revops-churn-risk-automation/
-├── app.py              # Orchestrator: CLI entrypoint + testable run_pipeline()
-├── models.py            # Pydantic models: single source of truth for data shapes
-├── risk.py               # Pure business rules: churn risk scoring (no I/O, no LLM)
-├── llm.py                 # Prompt design + provider failover + fallback summaries
-├── llm_providers.py        # OpenAI / Gemini provider implementations (shared contract)
-├── slack_client.py          # Slack Block Kit formatting + webhook delivery
-├── observability.py          # Structured JSON audit log per account (Stretch B)
-├── sample_accounts.csv       # Sample dataset used for testing throughout development
-├── prompt_design.md           # Full prompt engineering rationale, failure modes, improvements
-├── requirements.txt
-├── .env.example
-└── README.md
+├── app.py                 # CLI entry point and pipeline orchestration
+├── models.py              # Pydantic data models and validation
+├── risk.py                # Deterministic churn-risk scoring rules
+├── llm.py                 # Prompt orchestration, provider failover, and fallback summaries
+├── llm_providers.py       # OpenAI and Gemini provider implementations
+├── slack_client.py        # Slack Block Kit formatting and webhook delivery
+├── observability.py       # Structured JSON audit logging (Stretch B)
+├── sample_accounts.csv    # Sample input dataset
+├── prompt_design.md       # Prompt engineering rationale and design decisions
+├── requirements.txt       # Python dependencies
+├── README.md
+└── assets/
+    ├── architecture.png   # High-level system architecture
+    ├── Slack_2026_07_11.png  
+    └── Slack_2026_07_12.png 
 ```
 
 ## Stretch goals
