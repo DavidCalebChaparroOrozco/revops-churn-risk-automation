@@ -97,29 +97,7 @@ INFO Run summary: {'accounts_loaded': 15, 'row_errors': 0, 'accounts_at_risk': 7
 
 ## Architecture
 
-```
-CSV file
-   │
-   ▼
-app.py::load_accounts_from_csv()  ──► models.py::Account (Pydantic validation)
-   │  (invalid rows are skipped, logged, and don't stop the batch)
-   ▼
-risk.py::evaluate_accounts()  ──► models.py::RiskAssessment
-   │  (deterministic scoring rules, no LLM involved)
-   ▼
-app.py::build_reports()
-   │
-   ├─► llm.py::generate_risk_summary()
-   │      tries llm_providers.py providers in order (e.g. OpenAI → Gemini)
-   │      │
-   │      └─ all providers fail ─► llm.py::build_fallback_summary()
-   │                                 (deterministic, rule-based text)
-   ▼
-models.py::AccountRiskReport  (summary + which provider produced it)
-   │
-   ▼
-slack_client.py::build_slack_message() ──► slack_client.py::send_to_slack()
-```
+![alt text](Architecture.png)
 
 **Design principle behind this split:** each module has exactly one
 reason to change.
